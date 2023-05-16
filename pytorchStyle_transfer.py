@@ -1,4 +1,6 @@
 from __future__ import print_function
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 import torch
 import torch.nn as nn
@@ -12,14 +14,15 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 
 import copy
-
+from os.path import join,exists,basename,dirname,splitext
+import glob
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # desired size of the output image
 imsize = 512 if torch.cuda.is_available() else 128  # use small size if no GPU
 
 loader = transforms.Compose([
-    transforms.Resize(imsize),  # scale imported image
+    transforms.Resize((imsize,imsize)),  # scale imported image
     transforms.ToTensor()])  # transform it into a torch tensor
 
 
@@ -28,11 +31,22 @@ def image_loader(image_name):
     # fake batch dimension required to fit network's input dimensions
     image = loader(image).unsqueeze(0)
     return image.to(device, torch.float)
+prefix='/extension/var-www/csc'
+if not exists(prefix):
+    prefix='/home/csc'
+imgpaths=sorted(glob.glob(prefix+'/human/segTrainingSet/NV1/images/*.png'))[:100]
+stylepaths=sorted(glob.glob('data/images/skinStyle/*'))[::-1]
+maskpath=imgpaths[0].replace('images','masksHuman').replace('.jpg','.png')
+mask_img= image_loader(maskpath)
 
-
-style_img = image_loader("./data/images/neural-style/picasso.jpg")
-content_img = image_loader("./data/images/neural-style/dancing.jpg")
-
+style_img = image_loader(stylepaths[0])
+content_img = image_loader(imgpaths[0])
+# content_img[0][0][mask_img[0][0]<0.5]=style_img[0][0][mask_img[0][0]<0.5]
+# content_img[0][1][mask_img[0][0]<0.5]=style_img[0][1][mask_img[0][0]<0.5]
+# content_img[0][2][mask_img[0][0]<0.5]=style_img[0][2][mask_img[0][0]<0.5]
+content_img[0][0][mask_img[0][0]<0.5]=255
+content_img[0][1][mask_img[0][0]<0.5]=255
+content_img[0][2][mask_img[0][0]<0.5]=255
 assert style_img.size() == content_img.size(), \
     "we need to import style and content images of the same size"
 
@@ -40,11 +54,13 @@ unloader = transforms.ToPILImage()  # reconvert into PIL image
 
 plt.ion()
 
-def imshow(tensor, title=None):
+def imshow(tensor, title=None,save=False):
     image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
     image = image.squeeze(0)      # remove the fake batch dimension
     image = unloader(image)
     plt.imshow(image)
+    if(save):
+        plt.savefig('test.png')
     if title is not None:
         plt.title(title)
     plt.pause(0.001) # pause a bit so that plots are updated
@@ -257,10 +273,14 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
 
 
 output = run_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std,
-                            content_img, style_img, input_img)
-
+                            content_img, style_img, input_img,num_steps=50)
+# output = run_style_transfer(cnn, cnn_normalization_mean,
+#                             cnn_normalization_std,
+#                             content_img, style_img, input_img,
+#                             style_weight=100000,content_weight=1,
+#                             num_steps=300)
 plt.figure()
-imshow(output, title='Output Image')
+imshow(output, title='Output Image',save=True)
 
 # sphinx_gallery_thumbnail_number = 4
 plt.ioff()
